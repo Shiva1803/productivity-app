@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Productivity App</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
@@ -77,6 +78,42 @@
           </div>
           <button id="clockUseLocalBtn" class="clock-timezone-local-btn" type="button">Local</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Set Hours Panel -->
+    <div id="setHoursPanelBackdrop" class="clock-backdrop" hidden></div>
+    <section id="setHoursPanel" class="clock-panel" hidden aria-labelledby="setHoursPanelHeading" aria-modal="true" role="dialog">
+      <div class="clock-panel-head">
+        <h2 id="setHoursPanelHeading">Set Timer</h2>
+        <button id="setHoursPanelCloseBtn" type="button">Close</button>
+      </div>
+      
+      <div class="set-hours-inputs">
+        <div class="set-hours-input-group">
+          <label for="setHoursInput">Hours</label>
+          <input type="number" id="setHoursInput" min="0" max="9999" value="0" />
+        </div>
+        <div class="set-hours-input-group">
+          <label for="setMinutesInput">Minutes</label>
+          <input type="number" id="setMinutesInput" min="0" max="59" value="0" />
+        </div>
+        <div class="set-hours-input-group">
+          <label for="setSecondsInput">Seconds</label>
+          <input type="number" id="setSecondsInput" min="0" max="59" value="0" />
+        </div>
+      </div>
+
+      <div class="set-hours-default">
+        <label>
+          <input type="checkbox" id="setAsDefaultCheckbox" />
+          <span>Set as default timer value</span>
+        </label>
+      </div>
+
+      <div class="set-hours-actions">
+        <button id="setHoursSaveBtn" type="button" class="set-hours-save-btn">Save</button>
+        <button id="setHoursCancelBtn" type="button" class="set-hours-cancel-btn">Cancel</button>
       </div>
     </section>
 
@@ -206,38 +243,80 @@
 
     <main id="mainContent" class="main-grid">
       <section class="panel timer-panel" aria-labelledby="timerHeading">
-        <div class="panel-head">
-          <h2 id="timerHeading">Session Timer</h2>
-          <p>Set your remaining hours, then start, pause, or reset with one tap.</p>
-        </div>
-        <div id="timer" role="timer" aria-live="polite" aria-atomic="true">0999:00:00</div>
-        <p id="statusText" class="status-pill" role="status" aria-live="polite">Paused</p>
-        <div class="controls" role="group" aria-label="Timer controls">
-          <button id="startBtn" type="button"><span class="btn-label">Start</span><span class="shortcut-hint" data-shortcut-for="toggle"></span></button>
-          <button id="pauseBtn" type="button"><span class="btn-label">Pause</span><span class="shortcut-hint" data-shortcut-for="toggle"></span></button>
-          <button id="resetBtn" type="button"><span class="btn-label">Reset</span><span class="shortcut-hint" data-shortcut-for="reset"></span></button>
-          <button id="setHoursBtn" type="button"><span class="btn-label">Set Hours</span><span class="shortcut-hint" data-shortcut-for="setHours"></span></button>
-        </div>
-        <div class="timer-tag-row">
-          <label for="timerTagSelect">Active Tag</label>
-          <select id="timerTagSelect" aria-label="Select active tag for timer sessions"></select>
+        <div class="timer-tabs" role="tablist" aria-label="Timer modes">
+          <button id="countdownTab" class="timer-tab is-active" role="tab" aria-selected="true" aria-controls="countdownContent" type="button">Countdown</button>
+          <button id="stopwatchTab" class="timer-tab" role="tab" aria-selected="false" aria-controls="stopwatchContent" type="button">Stopwatch</button>
         </div>
 
-        <section class="preset-section" aria-labelledby="presetHeading">
-          <div class="preset-headline">
-            <h3 id="presetHeading">Session Presets</h3>
-            <p id="presetCount" class="preset-count">0/6 custom</p>
+        <div id="countdownContent" class="timer-content" role="tabpanel" aria-labelledby="countdownTab">
+          <div class="panel-head">
+            <h2 id="timerHeading">Session Timer</h2>
+            <p>Set your remaining hours, then start, pause, or reset with one tap.</p>
           </div>
-          <div id="presetButtons" class="preset-buttons" role="group" aria-label="Session preset options"></div>
-          <form id="presetForm" class="preset-form">
-            <label class="sr-only" for="presetLabel">Preset label</label>
-            <input id="presetLabel" name="presetLabel" type="text" maxlength="18" placeholder="Preset label (optional)">
-            <label class="sr-only" for="presetMinutes">Preset minutes</label>
-            <input id="presetMinutes" name="presetMinutes" type="number" min="1" max="115800" step="1" placeholder="Minutes" required inputmode="numeric">
-            <button id="savePresetBtn" type="submit">Save Preset</button>
-          </form>
-          <p id="presetFeedback" class="preset-feedback" role="status" aria-live="polite"></p>
-        </section>
+          <div id="timer" role="timer" aria-live="polite" aria-atomic="true">0999:00:00</div>
+          <p id="statusText" class="status-pill" role="status" aria-live="polite">Paused</p>
+          <div class="controls" role="group" aria-label="Timer controls">
+            <button id="startBtn" type="button"><span class="btn-label">Start</span><span class="shortcut-hint" data-shortcut-for="toggle"></span></button>
+            <button id="pauseBtn" type="button"><span class="btn-label">Pause</span><span class="shortcut-hint" data-shortcut-for="toggle"></span></button>
+            <button id="resetBtn" type="button"><span class="btn-label">Reset</span><span class="shortcut-hint" data-shortcut-for="reset"></span></button>
+            <button id="setHoursBtn" type="button"><span class="btn-label">Set Hours</span><span class="shortcut-hint" data-shortcut-for="setHours"></span></button>
+          </div>
+          <div class="timer-tag-row">
+            <label for="timerTagSelect">Active Tag</label>
+            <select id="timerTagSelect" aria-label="Select active tag for timer sessions"></select>
+          </div>
+
+          <section class="preset-section" aria-labelledby="presetHeading">
+            <div class="preset-headline">
+              <h3 id="presetHeading">Session Presets</h3>
+              <p id="presetCount" class="preset-count">0/6 custom</p>
+            </div>
+            <div id="presetButtons" class="preset-buttons" role="group" aria-label="Session preset options"></div>
+            <form id="presetForm" class="preset-form">
+              <label class="sr-only" for="presetLabel">Preset label</label>
+              <input id="presetLabel" name="presetLabel" type="text" maxlength="18" placeholder="Preset label (optional)">
+              <label class="sr-only" for="presetMinutes">Preset minutes</label>
+              <input id="presetMinutes" name="presetMinutes" type="number" min="1" max="115800" step="1" placeholder="Minutes" required inputmode="numeric">
+              <button id="savePresetBtn" type="submit">Save Preset</button>
+            </form>
+            <p id="presetFeedback" class="preset-feedback" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+
+        <div id="stopwatchContent" class="timer-content" role="tabpanel" aria-labelledby="stopwatchTab" hidden>
+          <div class="panel-head">
+            <h2>Stopwatch</h2>
+            <p>Track elapsed time with start, pause, and reset controls.</p>
+          </div>
+          <div id="stopwatchTimer" role="timer" aria-live="polite" aria-atomic="true">0000:00:00</div>
+          <p id="stopwatchStatusText" class="status-pill" role="status" aria-live="polite">Paused</p>
+          <div class="controls" role="group" aria-label="Stopwatch controls">
+            <button id="stopwatchStartBtn" type="button"><span class="btn-label">Start</span></button>
+            <button id="stopwatchPauseBtn" type="button"><span class="btn-label">Pause</span></button>
+            <button id="stopwatchResetBtn" type="button"><span class="btn-label">Reset</span></button>
+            <button id="stopwatchSetHoursBtn" type="button"><span class="btn-label">Set Hours</span></button>
+          </div>
+          <div class="timer-tag-row">
+            <label for="stopwatchTagSelect">Active Tag</label>
+            <select id="stopwatchTagSelect" aria-label="Select active tag for stopwatch sessions"></select>
+          </div>
+
+          <section class="preset-section" aria-labelledby="stopwatchPresetHeading">
+            <div class="preset-headline">
+              <h3 id="stopwatchPresetHeading">Session Presets</h3>
+              <p id="stopwatchPresetCount" class="preset-count">0/6 custom</p>
+            </div>
+            <div id="stopwatchPresetButtons" class="preset-buttons" role="group" aria-label="Session preset options"></div>
+            <form id="stopwatchPresetForm" class="preset-form">
+              <label class="sr-only" for="stopwatchPresetLabel">Preset label</label>
+              <input id="stopwatchPresetLabel" name="presetLabel" type="text" maxlength="18" placeholder="Preset label (optional)">
+              <label class="sr-only" for="stopwatchPresetMinutes">Preset minutes</label>
+              <input id="stopwatchPresetMinutes" name="presetMinutes" type="number" min="1" max="115800" step="1" placeholder="Minutes" required inputmode="numeric">
+              <button id="stopwatchSavePresetBtn" type="submit">Save Preset</button>
+            </form>
+            <p id="stopwatchPresetFeedback" class="preset-feedback" role="status" aria-live="polite"></p>
+          </section>
+        </div>
       </section>
 
       <section class="panel analytics-panel" aria-labelledby="analyticsHeading">

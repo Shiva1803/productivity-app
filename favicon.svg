@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="48" fill="#1a1a1a" stroke="#666" stroke-width="2"/>
+  
+  <!-- Clock numbers with colors -->
+  <text x="50" y="15" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold">12</text>
+  <text x="85" y="25" text-anchor="middle" fill="#ff1744" font-size="14" font-weight="bold">1</text>
+  <text x="92" y="55" text-anchor="middle" fill="#ff5722" font-size="14" font-weight="bold">3</text>
+  <text x="85" y="80" text-anchor="middle" fill="#ffc107" font-size="14" font-weight="bold">5</text>
+  <text x="50" y="92" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold">6</text>
+  <text x="15" y="80" text-anchor="middle" fill="#00bcd4" font-size="14" font-weight="bold">7</text>
+  <text x="8" y="55" text-anchor="middle" fill="#e91e63" font-size="14" font-weight="bold">9</text>
+  <text x="15" y="25" text-anchor="middle" fill="#4caf50" font-size="14" font-weight="bold">11</text>
+  
+  <!-- Clock hands -->
+  <line x1="50" y1="50" x2="50" y2="25" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <line x1="50" y1="50" x2="70" y2="50" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Center dot -->
+  <circle cx="50" cy="50" r="3" fill="#fff"/>
+</svg>

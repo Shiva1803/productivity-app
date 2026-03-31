@@ -27,13 +27,19 @@ const StorageModule = (() => {
     'notesItems',
     'timerTags',
     'activeTimerTagId',
+    'activeStopwatchTagId',
     'sessionLogs',
     'customPresets',
+    'stopwatchCustomPresets',
     'shortcutConfig',
     'weeklyGoalHours',
     'todoDisposableMode',
     'focusLockEnabled',
-    'focusLockAutoActivate'
+    'focusLockAutoActivate',
+    'defaultTimerSeconds',
+    'defaultStopwatchSeconds',
+    'stopwatchState',
+    'activeTimerTab'
   ].includes(key);
 
   // Supabase operations
@@ -243,6 +249,50 @@ const StorageModule = (() => {
             setItemLocal(key, data.auto_activate);
             return data.auto_activate;
           }
+        }
+      } else if (key === 'stopwatchState') {
+        const { data, error } = await supabase
+          .from('stopwatch_states')
+          .select('*')
+          .eq('user_id', userId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (data && !error) {
+          const stopwatchData = {
+            totalSeconds: data.total_seconds,
+            paused: data.paused
+          };
+          setItemLocal(key, stopwatchData);
+          return stopwatchData;
+        }
+      } else if (key === 'stopwatchCustomPresets') {
+        const { data, error } = await supabase
+          .from('stopwatch_custom_presets')
+          .select('*')
+          .eq('user_id', userId)
+          .limit(6);
+        
+        if (data && !error) {
+          const presets = data.map(row => ({
+            id: row.preset_id,
+            label: row.label,
+            minutes: row.duration_minutes
+          }));
+          setItemLocal(key, presets);
+          return presets;
+        }
+      } else if (key === 'activeStopwatchTagId') {
+        const { data, error } = await supabase
+          .from('active_stopwatch_tag')
+          .select('tag_id')
+          .eq('user_id', userId)
+          .single();
+        
+        if (data && !error) {
+          setItemLocal(key, data.tag_id);
+          return data.tag_id;
         }
       }
     } catch (error) {
@@ -693,6 +743,70 @@ const StorageModule = (() => {
             auto_activate: currentAutoActivate !== null ? currentAutoActivate : false,
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_id' });
+      } else if (key === 'stopwatchState') {
+        if (
+          previousLocal
+          && previousLocal.totalSeconds === value.totalSeconds
+          && previousLocal.paused === value.paused
+        ) {
+          return;
+        }
+
+        await supabase
+          .from('stopwatch_states')
+          .upsert({
+            user_id: userId,
+            total_seconds: value.totalSeconds,
+            paused: value.paused,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+      } else if (key === 'stopwatchCustomPresets') {
+        const previousPresets = previousLocal || [];
+        const nextPresets = value || [];
+        
+        // Detect changes
+        const changes = detectPresetChanges(previousPresets, nextPresets);
+        
+        if (changes.added.length === 0 && changes.deleted.length === 0) {
+          return; // No changes to sync
+        }
+        
+        // Batch upsert added presets
+        if (changes.added.length > 0) {
+          const presetsToUpsert = changes.added.map(preset => ({
+            user_id: userId,
+            preset_id: preset.id,
+            label: preset.label,
+            duration_minutes: preset.minutes,
+            updated_at: new Date().toISOString()
+          }));
+          
+          await supabase
+            .from('stopwatch_custom_presets')
+            .upsert(presetsToUpsert, { onConflict: 'user_id,preset_id' });
+        }
+        
+        // Batch delete removed presets
+        if (changes.deleted.length > 0) {
+          const presetIds = changes.deleted.map(preset => preset.id);
+          await supabase
+            .from('stopwatch_custom_presets')
+            .delete()
+            .eq('user_id', userId)
+            .in('preset_id', presetIds);
+        }
+      } else if (key === 'activeStopwatchTagId') {
+        if (previousLocal === value) {
+          return; // No change to sync
+        }
+        
+        await supabase
+          .from('active_stopwatch_tag')
+          .upsert({
+            user_id: userId,
+            tag_id: value,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
       }
     } catch (error) {
       console.error(`Error writing to Supabase (${key}):`, error);
@@ -860,6 +974,7 @@ const MAX_PRESET_MINUTES = MAX_TIMER_HOURS * 60;
 const TagsModule = (() => {
   const TAGS_STORAGE_KEY = 'timerTags';
   const ACTIVE_TAG_STORAGE_KEY = 'activeTimerTagId';
+  const ACTIVE_STOPWATCH_TAG_STORAGE_KEY = 'activeStopwatchTagId';
   const MAX_TAGS = 30;
   const UNTAGGED_ID = 'tag-untagged';
   const COLOR_OPTIONS = [
@@ -883,6 +998,7 @@ const TagsModule = (() => {
 
   let tags = [...DEFAULT_TAGS];
   let activeTimerTagId = UNTAGGED_ID;
+  let activeStopwatchTagId = UNTAGGED_ID;
   let listenersBound = false;
 
   const createTagId = () => {
@@ -985,7 +1101,8 @@ const TagsModule = (() => {
   const persist = async () => {
     await Promise.all([
       StorageModule.setItem(TAGS_STORAGE_KEY, tags),
-      StorageModule.setItem(ACTIVE_TAG_STORAGE_KEY, activeTimerTagId)
+      StorageModule.setItem(ACTIVE_TAG_STORAGE_KEY, activeTimerTagId),
+      StorageModule.setItem(ACTIVE_STOPWATCH_TAG_STORAGE_KEY, activeStopwatchTagId)
     ]);
   };
 
@@ -1090,6 +1207,9 @@ const TagsModule = (() => {
     const timerSelect = document.getElementById('timerTagSelect');
     fillTagSelect(timerSelect, { selectedValue: activeTimerTagId });
 
+    const stopwatchSelect = document.getElementById('stopwatchTagSelect');
+    fillTagSelect(stopwatchSelect, { selectedValue: activeStopwatchTagId });
+
     const todoTagSelect = document.getElementById('todoTagSelect');
     const currentTodoTag = todoTagSelect?.value || activeTimerTagId;
     fillTagSelect(todoTagSelect, { selectedValue: currentTodoTag });
@@ -1184,6 +1304,15 @@ const TagsModule = (() => {
       emitUpdated();
     });
 
+    document.getElementById('stopwatchTagSelect')?.addEventListener('change', async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLSelectElement)) return;
+      activeStopwatchTagId = resolveTagId(target.value);
+      await persist();
+      refreshUI();
+      emitUpdated();
+    });
+
     document.getElementById('tagCreateForm')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const nameInput = document.getElementById('newTagName');
@@ -1219,6 +1348,7 @@ const TagsModule = (() => {
   const load = async () => {
     tags = sanitizeTags(await StorageModule.getItem(TAGS_STORAGE_KEY));
     activeTimerTagId = sanitizeActiveTagId(await StorageModule.getItem(ACTIVE_TAG_STORAGE_KEY), tags);
+    activeStopwatchTagId = sanitizeActiveTagId(await StorageModule.getItem(ACTIVE_STOPWATCH_TAG_STORAGE_KEY), tags);
 
     fillColorSelect(document.getElementById('newTagColor'));
     bindEvents();
@@ -1232,6 +1362,7 @@ const TagsModule = (() => {
     getTags: () => tags.map((tag) => ({ ...tag, colorHex: getColorOption(tag.colorId).hex })),
     getColorOptions: () => [...COLOR_OPTIONS],
     getActiveTimerTagId: () => resolveTagId(activeTimerTagId),
+    getActiveStopwatchTagId: () => resolveTagId(activeStopwatchTagId),
     resolveTagId,
     getTagName,
     getTagColor,
@@ -1434,6 +1565,11 @@ const TimerModule = (() => {
   };
 
   const getTotalSeconds = () => totalSeconds;
+  const setTotalSeconds = (seconds) => {
+    totalSeconds = Math.max(0, Math.min(MAX_TIMER_SECONDS, seconds));
+    updateDisplay();
+    void saveState(paused);
+  };
   const getTimeUsedToday = () => timeUsedToday;
   const isPaused = () => paused;
 
@@ -1448,6 +1584,184 @@ const TimerModule = (() => {
     saveState,
     persistOnExit,
     getTotalSeconds,
+    setTotalSeconds,
+    getTimeUsedToday,
+    isPaused
+  };
+})();
+
+// StopwatchModule - Manages stopwatch timer (counts up)
+const StopwatchModule = (() => {
+  let totalSeconds = 0;
+  let timer = null;
+  let paused = true;
+  let timeUsedToday = 0;
+  let sessionStartedAtMs = null;
+  let unsyncedTickCount = 0;
+
+  const emitStateChange = () => {
+    document.dispatchEvent(new CustomEvent('stopwatch:statechange', {
+      detail: { totalSeconds, paused, timeUsedToday }
+    }));
+  };
+
+  const saveState = async (syncCloud = true) => {
+    await StorageModule.setItem('stopwatchState', {
+      totalSeconds,
+      paused
+    }, { syncCloud });
+  };
+
+  const finalizeCurrentSession = async ({ syncCloud = true } = {}) => {
+    if (timeUsedToday <= 0 || !sessionStartedAtMs) {
+      timeUsedToday = 0;
+      sessionStartedAtMs = null;
+      unsyncedTickCount = 0;
+      return;
+    }
+
+    const sessionEndedAtMs = Date.now();
+    const activeTagId = typeof TagsModule !== 'undefined'
+      ? TagsModule.getActiveStopwatchTagId()
+      : 'tag-untagged';
+    await AnalyticsModule.recordSession({
+      startTime: new Date(sessionStartedAtMs).toISOString(),
+      endTime: new Date(sessionEndedAtMs).toISOString(),
+      durationSeconds: timeUsedToday,
+      tagId: activeTagId
+    }, { syncCloud });
+
+    timeUsedToday = 0;
+    sessionStartedAtMs = null;
+    unsyncedTickCount = 0;
+  };
+
+  const finalizeCurrentSessionLocally = () => {
+    if (timeUsedToday <= 0 || !sessionStartedAtMs) {
+      timeUsedToday = 0;
+      sessionStartedAtMs = null;
+      unsyncedTickCount = 0;
+      return;
+    }
+
+    const sessionEndedAtMs = Date.now();
+    const activeTagId = typeof TagsModule !== 'undefined'
+      ? TagsModule.getActiveStopwatchTagId()
+      : 'tag-untagged';
+    AnalyticsModule.recordSessionLocal({
+      startTime: new Date(sessionStartedAtMs).toISOString(),
+      endTime: new Date(sessionEndedAtMs).toISOString(),
+      durationSeconds: timeUsedToday,
+      tagId: activeTagId
+    });
+
+    timeUsedToday = 0;
+    sessionStartedAtMs = null;
+    unsyncedTickCount = 0;
+  };
+
+  const startStopwatch = () => {
+    if (!paused) return;
+
+    paused = false;
+    if (!sessionStartedAtMs) {
+      sessionStartedAtMs = Date.now();
+    }
+    updateDisplay();
+
+    timer = setInterval(() => {
+      totalSeconds++;
+      timeUsedToday++;
+      unsyncedTickCount++;
+      updateDisplay();
+
+      if (unsyncedTickCount >= 30) {
+        unsyncedTickCount = 0;
+        saveState(true);
+      } else {
+        saveState(false);
+      }
+    }, 1000);
+  };
+
+  const pauseStopwatch = async (options = {}) => {
+    const { syncCloud = true } = options;
+    if (paused) return;
+
+    paused = true;
+    clearInterval(timer);
+    timer = null;
+
+    await finalizeCurrentSession({ syncCloud });
+    updateDisplay();
+    await saveState(syncCloud);
+  };
+
+  const resetStopwatch = async () => {
+    if (!paused) {
+      await pauseStopwatch({ syncCloud: true });
+    }
+
+    totalSeconds = 0;
+    timeUsedToday = 0;
+    sessionStartedAtMs = null;
+    unsyncedTickCount = 0;
+    paused = true;
+    updateDisplay();
+    await saveState(true);
+  };
+
+  const updateDisplay = () => {
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    document.getElementById("stopwatchTimer").innerText =
+      `${hrs.toString().padStart(4, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    emitStateChange();
+  };
+
+  const loadState = async () => {
+    const saved = await StorageModule.getItem('stopwatchState');
+    if (saved) {
+      totalSeconds = saved.totalSeconds;
+      paused = true;
+      updateDisplay();
+      if (!saved.paused) startStopwatch();
+    } else {
+      updateDisplay();
+    }
+  };
+
+  const persistOnExit = () => {
+    if (paused) return;
+
+    paused = true;
+    clearInterval(timer);
+    timer = null;
+    finalizeCurrentSessionLocally();
+    updateDisplay();
+    void saveState(false);
+  };
+
+  const getTotalSeconds = () => totalSeconds;
+  const setTotalSeconds = (seconds) => {
+    totalSeconds = Math.max(0, Math.min(MAX_TIMER_SECONDS, seconds));
+    updateDisplay();
+    void saveState(paused);
+  };
+  const getTimeUsedToday = () => timeUsedToday;
+  const isPaused = () => paused;
+
+  return {
+    start: startStopwatch,
+    pause: pauseStopwatch,
+    reset: resetStopwatch,
+    updateDisplay,
+    loadState,
+    saveState,
+    persistOnExit,
+    getTotalSeconds,
+    setTotalSeconds,
     getTimeUsedToday,
     isPaused
   };
@@ -2354,6 +2668,252 @@ const PresetModule = (() => {
     if (eventsBound) return;
 
     const presetForm = document.getElementById('presetForm');
+    if (presetForm) {
+      presetForm.addEventListener('submit', handlePresetSubmit);
+    }
+
+    eventsBound = true;
+  };
+
+  const loadPresets = async () => {
+    const savedPresets = await StorageModule.getItem(STORAGE_KEY);
+    customPresets = sanitizePresets(savedPresets);
+    bindEvents();
+    renderPresets();
+    setFeedback('');
+  };
+
+  return {
+    load: loadPresets,
+    highlightActivePreset
+  };
+})();
+
+// StopwatchPresetModule - Quick and custom stopwatch presets
+const StopwatchPresetModule = (() => {
+  const STORAGE_KEY = 'stopwatchCustomPresets';
+  const MAX_CUSTOM_PRESETS = 6;
+  const MAX_LABEL_LENGTH = 18;
+  const DEFAULT_PRESETS = [
+    { id: 'default-25', label: '25m', minutes: 25, isDefault: true },
+    { id: 'default-50', label: '50m', minutes: 50, isDefault: true },
+    { id: 'default-90', label: '90m', minutes: 90, isDefault: true },
+    { id: 'default-120', label: '2h', minutes: 120, isDefault: true }
+  ];
+
+  let customPresets = [];
+  let eventsBound = false;
+
+  const formatDuration = (minutes) => {
+    if (minutes % 60 === 0) {
+      return `${minutes / 60}h`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours === 0) {
+      return `${mins}m`;
+    }
+
+    return `${hours}h ${mins}m`;
+  };
+
+  const createPresetId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `preset-${crypto.randomUUID()}`;
+    }
+    return `preset-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  };
+
+  const normalizeLabel = (label, minutes) => {
+    const cleaned = typeof label === 'string'
+      ? label.trim().slice(0, MAX_LABEL_LENGTH)
+      : '';
+    return cleaned || formatDuration(minutes);
+  };
+
+  const sanitizePresets = (rawPresets) => {
+    if (!Array.isArray(rawPresets)) {
+      return [];
+    }
+
+    const seenIds = new Set();
+    return rawPresets
+      .filter((preset) => preset && Number.isInteger(preset.minutes))
+      .map((preset) => {
+        const minutes = preset.minutes;
+        if (minutes < 1 || minutes > MAX_PRESET_MINUTES) {
+          return null;
+        }
+
+        let id = typeof preset.id === 'string' ? preset.id.trim() : '';
+        if (!id || seenIds.has(id)) {
+          id = createPresetId();
+        }
+        seenIds.add(id);
+
+        return {
+          id,
+          label: normalizeLabel(preset.label, minutes),
+          minutes
+        };
+      })
+      .filter(Boolean)
+      .slice(0, MAX_CUSTOM_PRESETS);
+  };
+
+  const getAllPresets = () => [
+    ...DEFAULT_PRESETS,
+    ...customPresets.map((preset) => ({ ...preset, isDefault: false }))
+  ];
+
+  const setFeedback = (message = '') => {
+    const feedbackEl = document.getElementById('stopwatchPresetFeedback');
+    if (feedbackEl) {
+      feedbackEl.textContent = message;
+    }
+  };
+
+  const updatePresetCount = () => {
+    const countEl = document.getElementById('stopwatchPresetCount');
+    if (countEl) {
+      countEl.textContent = `${customPresets.length}/${MAX_CUSTOM_PRESETS} custom`;
+    }
+
+    const saveBtn = document.getElementById('stopwatchSavePresetBtn');
+    if (saveBtn) {
+      saveBtn.disabled = customPresets.length >= MAX_CUSTOM_PRESETS;
+    }
+  };
+
+  const persist = async () => {
+    await StorageModule.setItem(STORAGE_KEY, customPresets);
+  };
+
+  const highlightActivePreset = () => {
+    const currentSeconds = StopwatchModule.getTotalSeconds();
+    const isExactMinute = currentSeconds % 60 === 0;
+    const currentMinutes = isExactMinute ? currentSeconds / 60 : null;
+
+    document.querySelectorAll('#stopwatchPresetButtons .preset-btn').forEach((btn) => {
+      const presetMinutes = Number.parseInt(btn.dataset.minutes, 10);
+      btn.classList.toggle('is-current', isExactMinute && presetMinutes === currentMinutes);
+    });
+  };
+
+  const applyPreset = async (preset) => {
+    if (!StopwatchModule.isPaused()) {
+      setFeedback('Pause stopwatch first.');
+      return;
+    }
+
+    StopwatchModule.setTotalSeconds(preset.minutes * 60);
+    await StopwatchModule.saveState(true);
+    setFeedback(`Set stopwatch to ${preset.label}.`);
+    highlightActivePreset();
+  };
+
+  const deletePreset = async (id) => {
+    const target = customPresets.find((preset) => preset.id === id);
+    customPresets = customPresets.filter((preset) => preset.id !== id);
+    await persist();
+    renderPresets();
+
+    if (target) {
+      setFeedback(`Removed preset ${target.label}.`);
+    }
+  };
+
+  const renderPresets = () => {
+    const container = document.getElementById('stopwatchPresetButtons');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const presets = getAllPresets();
+
+    presets.forEach((preset) => {
+      const item = document.createElement('div');
+      item.className = 'preset-item';
+
+      const applyBtn = document.createElement('button');
+      applyBtn.type = 'button';
+      applyBtn.className = 'preset-btn';
+      applyBtn.dataset.minutes = String(preset.minutes);
+      applyBtn.dataset.presetId = preset.id;
+      applyBtn.textContent = preset.label;
+      applyBtn.setAttribute('aria-label', `Set stopwatch to ${preset.label}`);
+      applyBtn.addEventListener('click', async () => {
+        await applyPreset(preset);
+      });
+
+      item.appendChild(applyBtn);
+
+      if (!preset.isDefault) {
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'preset-remove';
+        removeBtn.textContent = 'Remove';
+        removeBtn.setAttribute('aria-label', `Delete preset ${preset.label}`);
+        removeBtn.addEventListener('click', async () => {
+          await deletePreset(preset.id);
+        });
+        item.appendChild(removeBtn);
+      }
+
+      container.appendChild(item);
+    });
+
+    updatePresetCount();
+    highlightActivePreset();
+  };
+
+  const handlePresetSubmit = async (event) => {
+    event.preventDefault();
+
+    const labelInput = document.getElementById('stopwatchPresetLabel');
+    const minutesInput = document.getElementById('stopwatchPresetMinutes');
+    if (!labelInput || !minutesInput) return;
+
+    const minutes = Number.parseInt(minutesInput.value, 10);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_PRESET_MINUTES) {
+      setFeedback(`Enter minutes between 1 and ${MAX_PRESET_MINUTES}.`);
+      minutesInput.focus();
+      return;
+    }
+
+    if (customPresets.length >= MAX_CUSTOM_PRESETS) {
+      setFeedback(`You can save up to ${MAX_CUSTOM_PRESETS} custom presets.`);
+      return;
+    }
+
+    const label = normalizeLabel(labelInput.value, minutes);
+    const duplicate = customPresets.some(
+      (preset) =>
+        preset.minutes === minutes &&
+        preset.label.toLowerCase() === label.toLowerCase()
+    );
+    if (duplicate) {
+      setFeedback('That preset already exists.');
+      return;
+    }
+
+    customPresets.push({
+      id: createPresetId(),
+      label,
+      minutes
+    });
+
+    await persist();
+    renderPresets();
+    labelInput.value = '';
+    minutesInput.value = '';
+    setFeedback(`Saved preset ${label}.`);
+  };
+
+  const bindEvents = () => {
+    if (eventsBound) return;
+
+    const presetForm = document.getElementById('stopwatchPresetForm');
     if (presetForm) {
       presetForm.addEventListener('submit', handlePresetSubmit);
     }
@@ -5038,6 +5598,119 @@ const syncTimerUIState = () => {
   PresetModule.highlightActivePreset();
 };
 
+const syncStopwatchUIState = () => {
+  const startBtn = document.getElementById('stopwatchStartBtn');
+  const pauseBtn = document.getElementById('stopwatchPauseBtn');
+  const statusText = document.getElementById('stopwatchStatusText');
+
+  if (!startBtn || !pauseBtn || !statusText) return;
+
+  const paused = StopwatchModule.isPaused();
+
+  startBtn.disabled = !paused;
+  pauseBtn.disabled = paused;
+
+  if (paused) {
+    statusText.textContent = 'Paused';
+    statusText.dataset.state = 'paused';
+  } else {
+    statusText.textContent = 'Running';
+    statusText.dataset.state = 'running';
+  }
+
+  StopwatchPresetModule.highlightActivePreset();
+};
+
+async function requestAndResetStopwatch() {
+  const confirmed = confirm('Reset stopwatch to 0000:00:00?');
+  if (confirmed) {
+    await StopwatchModule.reset();
+    syncStopwatchUIState();
+  }
+}
+
+// TimerTabsModule - Manages tab switching between countdown and stopwatch
+const TimerTabsModule = (() => {
+  let activeTab = 'countdown';
+
+  const switchTab = (tabName) => {
+    if (tabName === activeTab) return;
+
+    // Check if current timer is running
+    const countdownRunning = !TimerModule.isPaused();
+    const stopwatchRunning = !StopwatchModule.isPaused();
+
+    if (countdownRunning || stopwatchRunning) {
+      return; // Don't allow switching when timer is running
+    }
+
+    activeTab = tabName;
+
+    // Update tab buttons
+    const countdownTab = document.getElementById('countdownTab');
+    const stopwatchTab = document.getElementById('stopwatchTab');
+    const countdownContent = document.getElementById('countdownContent');
+    const stopwatchContent = document.getElementById('stopwatchContent');
+
+    if (tabName === 'countdown') {
+      countdownTab?.classList.add('is-active');
+      countdownTab?.setAttribute('aria-selected', 'true');
+      stopwatchTab?.classList.remove('is-active');
+      stopwatchTab?.setAttribute('aria-selected', 'false');
+      countdownContent?.removeAttribute('hidden');
+      stopwatchContent?.setAttribute('hidden', '');
+    } else {
+      stopwatchTab?.classList.add('is-active');
+      stopwatchTab?.setAttribute('aria-selected', 'true');
+      countdownTab?.classList.remove('is-active');
+      countdownTab?.setAttribute('aria-selected', 'false');
+      stopwatchContent?.removeAttribute('hidden');
+      countdownContent?.setAttribute('hidden', '');
+    }
+
+    // Save active tab
+    void StorageModule.setItem('activeTimerTab', tabName, { syncCloud: false });
+  };
+
+  const updateTabStates = () => {
+    const countdownRunning = !TimerModule.isPaused();
+    const stopwatchRunning = !StopwatchModule.isPaused();
+    
+    const countdownTab = document.getElementById('countdownTab');
+    const stopwatchTab = document.getElementById('stopwatchTab');
+
+    if (countdownRunning) {
+      stopwatchTab?.setAttribute('disabled', '');
+    } else if (stopwatchRunning) {
+      countdownTab?.setAttribute('disabled', '');
+    } else {
+      countdownTab?.removeAttribute('disabled');
+      stopwatchTab?.removeAttribute('disabled');
+    }
+  };
+
+  const init = () => {
+    const countdownTab = document.getElementById('countdownTab');
+    const stopwatchTab = document.getElementById('stopwatchTab');
+
+    countdownTab?.addEventListener('click', () => switchTab('countdown'));
+    stopwatchTab?.addEventListener('click', () => switchTab('stopwatch'));
+
+    // Listen to timer state changes to update tab disabled states
+    document.addEventListener('timer:statechange', updateTabStates);
+    document.addEventListener('stopwatch:statechange', updateTabStates);
+
+    // Load saved tab
+    void StorageModule.getItem('activeTimerTab').then((saved) => {
+      if (saved === 'stopwatch') {
+        switchTab('stopwatch');
+      }
+    });
+  };
+
+  return { init, updateTabStates };
+})();
+
 // ClockModule - Header clock synced to system time
 const ClockModule = (() => {
   const STORAGE_KEY = 'clockUtcOffsetMinutes';
@@ -5305,6 +5978,194 @@ const ClockModule = (() => {
   };
 })();
 
+// SetHoursModule - Set timer hours/minutes/seconds with default value support
+const SetHoursModule = (() => {
+  const DEFAULT_TIMER_KEY = 'defaultTimerSeconds';
+  let defaultTimerSeconds = 0;
+  let listenersBound = false;
+
+  const panel = document.getElementById('setHoursPanel');
+  const backdrop = document.getElementById('setHoursPanelBackdrop');
+  const closeBtn = document.getElementById('setHoursPanelCloseBtn');
+  const hoursInput = document.getElementById('setHoursInput');
+  const minutesInput = document.getElementById('setMinutesInput');
+  const secondsInput = document.getElementById('setSecondsInput');
+  const setAsDefaultCheckbox = document.getElementById('setAsDefaultCheckbox');
+  const saveBtn = document.getElementById('setHoursSaveBtn');
+  const cancelBtn = document.getElementById('setHoursCancelBtn');
+  const setHoursBtn = document.getElementById('setHoursBtn');
+
+  const openPanel = () => {
+    // Get current timer value
+    const currentSeconds = TimerModule.getTotalSeconds();
+    const hours = Math.floor(currentSeconds / 3600);
+    const minutes = Math.floor((currentSeconds % 3600) / 60);
+    const seconds = currentSeconds % 60;
+
+    hoursInput.value = hours;
+    minutesInput.value = minutes;
+    secondsInput.value = seconds;
+    setAsDefaultCheckbox.checked = false;
+
+    panel.hidden = false;
+    backdrop.hidden = false;
+    hoursInput.focus();
+  };
+
+  const closePanel = () => {
+    panel.hidden = true;
+    backdrop.hidden = true;
+  };
+
+  const saveTimer = async () => {
+    const hours = Math.max(0, Math.min(9999, parseInt(hoursInput.value) || 0));
+    const minutes = Math.max(0, Math.min(59, parseInt(minutesInput.value) || 0));
+    const seconds = Math.max(0, Math.min(59, parseInt(secondsInput.value) || 0));
+
+    const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+    // Set timer
+    TimerModule.setTotalSeconds(totalSeconds);
+
+    // Save as default if checked
+    if (setAsDefaultCheckbox.checked) {
+      defaultTimerSeconds = totalSeconds;
+      await StorageModule.setItem(DEFAULT_TIMER_KEY, defaultTimerSeconds);
+    }
+
+    closePanel();
+  };
+
+  const bindEvents = () => {
+    if (listenersBound) return;
+    listenersBound = true;
+
+    setHoursBtn.addEventListener('click', openPanel);
+    closeBtn.addEventListener('click', closePanel);
+    backdrop.addEventListener('click', closePanel);
+    cancelBtn.addEventListener('click', closePanel);
+    saveBtn.addEventListener('click', saveTimer);
+
+    // Enter key to save
+    [hoursInput, minutesInput, secondsInput].forEach(input => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          saveTimer();
+        } else if (e.key === 'Escape') {
+          closePanel();
+        }
+      });
+    });
+
+    // Escape key to close
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !panel.hidden) {
+        closePanel();
+      }
+    });
+  };
+
+  const load = async () => {
+    defaultTimerSeconds = await StorageModule.getItem(DEFAULT_TIMER_KEY) || 0;
+    
+    // Set default timer value on first load if timer is at 0
+    const currentSeconds = TimerModule.getTotalSeconds();
+    if (currentSeconds === 0 && defaultTimerSeconds > 0) {
+      TimerModule.setTotalSeconds(defaultTimerSeconds);
+    }
+
+    bindEvents();
+  };
+
+  return {
+    load
+  };
+})();
+
+// StopwatchSetHoursModule - Set stopwatch hours/minutes/seconds with default value support
+const StopwatchSetHoursModule = (() => {
+  const DEFAULT_TIMER_KEY = 'defaultStopwatchSeconds';
+  let defaultTimerSeconds = 0;
+  let listenersBound = false;
+
+  const panel = document.getElementById('setHoursPanel');
+  const backdrop = document.getElementById('setHoursPanelBackdrop');
+  const closeBtn = document.getElementById('setHoursPanelCloseBtn');
+  const hoursInput = document.getElementById('setHoursInput');
+  const minutesInput = document.getElementById('setMinutesInput');
+  const secondsInput = document.getElementById('setSecondsInput');
+  const setAsDefaultCheckbox = document.getElementById('setAsDefaultCheckbox');
+  const saveBtn = document.getElementById('setHoursSaveBtn');
+  const cancelBtn = document.getElementById('setHoursCancelBtn');
+  const setHoursBtn = document.getElementById('stopwatchSetHoursBtn');
+
+  const openPanel = () => {
+    // Get current stopwatch value
+    const currentSeconds = StopwatchModule.getTotalSeconds();
+    const hours = Math.floor(currentSeconds / 3600);
+    const minutes = Math.floor((currentSeconds % 3600) / 60);
+    const seconds = currentSeconds % 60;
+
+    hoursInput.value = hours;
+    minutesInput.value = minutes;
+    secondsInput.value = seconds;
+    setAsDefaultCheckbox.checked = false;
+
+    panel.hidden = false;
+    backdrop.hidden = false;
+    hoursInput.focus();
+  };
+
+  const closePanel = () => {
+    panel.hidden = true;
+    backdrop.hidden = true;
+  };
+
+  const saveTimer = async () => {
+    const hours = Math.max(0, Math.min(9999, parseInt(hoursInput.value) || 0));
+    const minutes = Math.max(0, Math.min(59, parseInt(minutesInput.value) || 0));
+    const seconds = Math.max(0, Math.min(59, parseInt(secondsInput.value) || 0));
+
+    const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+    // Set stopwatch
+    StopwatchModule.setTotalSeconds(totalSeconds);
+
+    // Save as default if checked
+    if (setAsDefaultCheckbox.checked) {
+      defaultTimerSeconds = totalSeconds;
+      await StorageModule.setItem(DEFAULT_TIMER_KEY, defaultTimerSeconds);
+    }
+
+    closePanel();
+  };
+
+  const bindEvents = () => {
+    if (listenersBound) return;
+    listenersBound = true;
+
+    setHoursBtn.addEventListener('click', openPanel);
+    // Note: closeBtn, backdrop, cancelBtn, saveBtn are shared with SetHoursModule
+    // Only bind setHoursBtn click for stopwatch
+  };
+
+  const load = async () => {
+    defaultTimerSeconds = await StorageModule.getItem(DEFAULT_TIMER_KEY) || 0;
+    
+    // Set default stopwatch value on first load if stopwatch is at 0
+    const currentSeconds = StopwatchModule.getTotalSeconds();
+    if (currentSeconds === 0 && defaultTimerSeconds > 0) {
+      StopwatchModule.setTotalSeconds(defaultTimerSeconds);
+    }
+
+    bindEvents();
+  };
+
+  return {
+    load
+  };
+})();
+
 
 // FocusLockModule - Minimal distraction mode with click-to-access
 const FocusLockModule = (() => {
@@ -5452,6 +6313,7 @@ const FocusLockModule = (() => {
 // Main Application Initialization
 window.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('timer:statechange', syncTimerUIState);
+  document.addEventListener('stopwatch:statechange', syncStopwatchUIState);
 
   // Initialize theme
   await ThemeModule.load();
@@ -5465,11 +6327,18 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Initialize tags and active timer tag
   await TagsModule.load();
   
+  // Initialize timer tabs
+  TimerTabsModule.init();
+  
   // Initialize timer
   await TimerModule.loadState();
 
+  // Initialize stopwatch
+  await StopwatchModule.loadState();
+
   // Initialize presets
   await PresetModule.load();
+  await StopwatchPresetModule.load();
 
   // Initialize to-do list
   await ToDoModule.load();
@@ -5500,8 +6369,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize focus lock mode
   await FocusLockModule.load();
+
+  // Initialize set hours panel
+  await SetHoursModule.load();
+  await StopwatchSetHoursModule.load();
   
-  // Attach event listeners to control buttons
+  // Attach event listeners to countdown timer control buttons
   document.getElementById('startBtn').addEventListener('click', () => TimerModule.start());
   document.getElementById('pauseBtn').addEventListener('click', async () => {
     await TimerModule.pause();
@@ -5510,17 +6383,27 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('resetBtn').addEventListener('click', async () => {
     await requestAndResetTimer();
   });
-  document.getElementById('setHoursBtn').addEventListener('click', async () => {
-    await TimerModule.setCustomHours();
-    syncTimerUIState();
+
+  // Attach event listeners to stopwatch control buttons
+  document.getElementById('stopwatchStartBtn').addEventListener('click', () => StopwatchModule.start());
+  document.getElementById('stopwatchPauseBtn').addEventListener('click', async () => {
+    await StopwatchModule.pause();
+    syncStopwatchUIState();
   });
+  document.getElementById('stopwatchResetBtn').addEventListener('click', async () => {
+    await requestAndResetStopwatch();
+  });
+
+  // setHoursBtn is now handled by SetHoursModule and StopwatchSetHoursModule
   document.getElementById('themeToggle').addEventListener('click', async () => ThemeModule.toggle());
 
   syncTimerUIState();
+  syncStopwatchUIState();
 });
 
 const handlePageExit = () => {
   TimerModule.persistOnExit();
+  StopwatchModule.persistOnExit();
 };
 
 window.addEventListener('pagehide', handlePageExit);
