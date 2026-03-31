@@ -1053,6 +1053,21 @@ button.header-clock-btn:focus-visible {
   grid-column: 1 / -1;
 }
 
+/* Equal height for timer and analytics panels */
+.timer-panel,
+.analytics-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.analytics-panel .chart-container {
+  flex: 0 0 auto;
+  height: 280px;
+  display: flex;
+  align-items: center;
+}
+
 .todo-heading-row {
   display: flex;
   align-items: center;

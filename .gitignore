@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+
+# Supabase config (contains API keys)
 config.js
 
 # Dependencies
@@ -36,3 +38,4 @@ task-*-completion-*.md
 ERROR_HANDLING.md
 MIGRATION_GUIDE.md
 TROUBLESHOOTING.md
+ENV_SETUP.md

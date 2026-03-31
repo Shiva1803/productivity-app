@@ -5390,14 +5390,8 @@ const FocusLockModule = (() => {
   };
 
   const handleTimerStateChange = (event) => {
-    if (!autoActivate) return;
-    
-    const { paused } = event.detail;
-    if (!paused && !enabled) {
-      void setFocusLock(true); // Timer started, enable focus lock
-    } else if (paused && enabled) {
-      void setFocusLock(false); // Timer paused, disable focus lock
-    }
+    // Auto-activation removed - user controls focus lock independently
+    // Focus lock and timer are now separate features
   };
 
   const handlePanelClick = (event) => {
@@ -5457,9 +5451,6 @@ const FocusLockModule = (() => {
 
 // Main Application Initialization
 window.addEventListener('DOMContentLoaded', async () => {
-  // Wait for Supabase to initialize (loads config from env vars in production)
-  await supabasePromise;
-  
   document.addEventListener('timer:statechange', syncTimerUIState);
 
   // Initialize theme
