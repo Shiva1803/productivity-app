@@ -1,0 +1,38 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+config.js
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Test files
+test-*.html
+verify-*.js
+
+# Task completion reports
+task-*-completion-*.md
+
+# Kiro specs (development only)
+.kiro/
+
+# Documentation (keep only essential ones in repo)
+ERROR_HANDLING.md
+MIGRATION_GUIDE.md
+TROUBLESHOOTING.md

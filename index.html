@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Countdown Timer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Skip to main content</a>
+
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <h1>Countdown Timer</h1>
+        <p class="subtitle">A focused countdown with daily usage tracking.</p>
+      </div>
+      <div class="header-actions">
+        <button
+          id="headerClock"
+          class="header-clock header-clock-btn"
+          type="button"
+          aria-live="polite"
+          aria-controls="clockPanel"
+          aria-expanded="false"
+          aria-label="Open clock panel"
+        >
+          [AM 0:00]
+        </button>
+        <button id="focusLockToggle" type="button" aria-pressed="false" aria-label="Toggle focus lock mode">Focus Lock</button>
+        <button id="themeToggle" type="button" aria-pressed="false" aria-label="Switch to dark theme">Dark Theme</button>
+        <button id="settingsToggle" class="icon-btn" type="button" aria-controls="settingsPanel" aria-expanded="false" aria-label="Open settings">
+          <span class="icon-sliders" aria-hidden="true"></span>
+          <span class="sr-only">Open settings</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="clockPanelBackdrop" class="clock-backdrop" hidden></div>
+    <section id="clockPanel" class="clock-panel" hidden aria-labelledby="clockPanelHeading" aria-modal="true" role="dialog">
+      <div class="clock-panel-head">
+        <h2 id="clockPanelHeading">Clock</h2>
+        <button id="clockPanelCloseBtn" type="button">Close</button>
+      </div>
+      <p id="clockPanelTime" class="clock-panel-time">00:00:00</p>
+      <p id="clockPanelDate" class="clock-panel-date">01-January-1970</p>
+      <section class="clock-mini-calendar" aria-label="Current month calendar">
+        <div class="clock-calendar-head">
+          <button id="clockCalendarPrevBtn" class="clock-calendar-nav-btn" type="button" aria-label="Show previous month">‹</button>
+          <p id="clockCalendarMonth" class="clock-calendar-month">MARCH</p>
+          <button id="clockCalendarNextBtn" class="clock-calendar-nav-btn" type="button" aria-label="Show next month">›</button>
+        </div>
+        <div class="clock-calendar-weekdays" aria-hidden="true">
+          <span>S</span>
+          <span>M</span>
+          <span>T</span>
+          <span>W</span>
+          <span>T</span>
+          <span>F</span>
+          <span>S</span>
+        </div>
+        <div id="clockCalendarGrid" class="clock-calendar-grid"></div>
+      </section>
+      <div class="clock-panel-foot">
+        <div class="clock-timezone-wrap">
+          <p class="clock-panel-timezone">UTC</p>
+          <div class="clock-timezone-stepper" role="group" aria-label="UTC offset controls">
+            <button id="clockOffsetPrevBtn" class="clock-offset-btn" type="button" aria-label="Select previous UTC offset">-</button>
+            <p id="clockTimezoneValue" class="clock-timezone-value">+5:30</p>
+            <button id="clockOffsetNextBtn" class="clock-offset-btn" type="button" aria-label="Select next UTC offset">+</button>
+          </div>
+          <button id="clockUseLocalBtn" class="clock-timezone-local-btn" type="button">Local</button>
+        </div>
+      </div>
+    </section>
+
+    <aside id="settingsPanel" class="settings-panel" hidden aria-labelledby="settingsHeading" aria-modal="true" role="dialog">
+      <div class="settings-panel-head">
+        <h2 id="settingsHeading">Settings</h2>
+        <button id="settingsCloseBtn" type="button">Close</button>
+      </div>
+
+      <section class="settings-block" aria-labelledby="shortcutsHeading">
+        <h3 id="shortcutsHeading">Keyboard Controls</h3>
+        <p class="settings-help">Use shortcuts when the settings panel is closed.</p>
+        <form id="shortcutForm" class="shortcut-form">
+          <div class="shortcut-row">
+            <label for="shortcutToggle">Start/Pause</label>
+            <select id="shortcutToggle" name="toggle"></select>
+          </div>
+          <div class="shortcut-row">
+            <label for="shortcutReset">Reset</label>
+            <select id="shortcutReset" name="reset"></select>
+          </div>
+          <div class="shortcut-row">
+            <label for="shortcutSetHours">Set Hours</label>
+            <select id="shortcutSetHours" name="setHours"></select>
+          </div>
+          <div class="shortcut-actions">
+            <button id="saveShortcutsBtn" type="submit">Save Shortcuts</button>
+            <button id="resetShortcutsBtn" type="button">Reset Defaults</button>
+          </div>
+        </form>
+        <p id="shortcutFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="settings-block" aria-labelledby="tagsHeading">
+        <h3 id="tagsHeading">Tags + Colors</h3>
+        <p class="settings-help">Tag sessions and tasks. You can choose from 10 colors.</p>
+        <form id="tagCreateForm" class="tag-create-form">
+          <label class="sr-only" for="newTagName">Tag name</label>
+          <input id="newTagName" name="newTagName" type="text" maxlength="20" placeholder="New tag name" required>
+          <label class="sr-only" for="newTagColor">Tag color</label>
+          <select id="newTagColor" name="newTagColor"></select>
+          <button id="addTagBtn" type="submit">Add Tag</button>
+        </form>
+        <ul id="tagManagerList" class="tag-manager-list" aria-live="polite"></ul>
+        <p id="tagFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="settings-block" aria-labelledby="goalsHeading">
+        <h3 id="goalsHeading">Streaks + Weekly Goals</h3>
+        <div class="goal-metrics">
+          <article class="metric-card">
+            <p class="metric-label">Days Used This Week</p>
+            <p id="weekActiveDays" class="metric-value">0/7</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Current Streak</p>
+            <p id="currentStreak" class="metric-value">0 days</p>
+          </article>
+        </div>
+        <div class="goal-progress-block">
+          <div class="goal-progress-meta">
+            <p id="goalProgressText">0h / 10h</p>
+            <p id="goalPercentText">0%</p>
+          </div>
+          <progress id="goalProgressBar" max="100" value="0">0%</progress>
+        </div>
+        <form id="weeklyGoalForm" class="goal-form">
+          <label for="weeklyGoalHours">Weekly Goal (hours)</label>
+          <div class="goal-form-row">
+            <input id="weeklyGoalHours" name="weeklyGoalHours" type="number" min="1" max="200" step="1" required inputmode="numeric">
+            <button id="saveGoalBtn" type="submit">Save Goal</button>
+          </div>
+        </form>
+        <p id="goalFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="settings-block" aria-labelledby="backupHeading">
+        <h3 id="backupHeading">Export / Backup</h3>
+        <p class="settings-help">Export analytics as JSON/CSV, or import a backup file.</p>
+        <div class="backup-actions">
+          <button id="exportJsonBtn" type="button">Export JSON</button>
+          <button id="exportCsvBtn" type="button">Export CSV</button>
+        </div>
+        <div class="backup-import-row">
+          <label class="sr-only" for="backupImportFile">Import backup file</label>
+          <input id="backupImportFile" type="file" accept=".json,.csv,application/json,text/csv">
+          <label class="sr-only" for="backupImportMode">Import mode</label>
+          <select id="backupImportMode">
+            <option value="merge">Merge With Existing</option>
+            <option value="replace">Replace Existing</option>
+          </select>
+          <button id="importBackupBtn" type="button">Import File</button>
+        </div>
+        <p id="backupFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+      </section>
+    </aside>
+    <div id="settingsBackdrop" class="settings-backdrop" hidden></div>
+
+    <aside id="dailyReportPanel" class="report-panel" hidden aria-labelledby="dailyReportHeading" aria-modal="true" role="dialog">
+      <div class="report-panel-head">
+        <h2 id="dailyReportHeading">Daily Report</h2>
+        <button id="dailyReportCloseBtn" type="button">Close</button>
+      </div>
+      <p id="dailyReportDate" class="report-date">-</p>
+      <div id="dailyReportSummary" class="report-summary"></div>
+      <div class="report-sessions-wrap">
+        <h3>Session Details</h3>
+        <div id="dailyReportSessions"></div>
+      </div>
+    </aside>
+    <div id="dailyReportBackdrop" class="settings-backdrop" hidden></div>
+
+    <div id="resetConfirmBackdrop" class="confirm-backdrop" hidden></div>
+    <section id="resetConfirmModal" class="confirm-modal" hidden aria-labelledby="resetConfirmHeading" aria-modal="true" role="dialog">
+      <h2 id="resetConfirmHeading">Confirm Reset</h2>
+      <p class="confirm-copy">Type <strong>reset</strong> to clear your timer progress.</p>
+      <form id="resetConfirmForm" class="confirm-form">
+        <label for="resetConfirmInput">Type reset</label>
+        <input id="resetConfirmInput" type="text" autocomplete="off" spellcheck="false" placeholder="reset">
+        <p id="resetConfirmFeedback" class="confirm-feedback" role="status" aria-live="polite"></p>
+        <div class="confirm-actions">
+          <button id="resetConfirmCancelBtn" type="button">Cancel</button>
+          <button id="resetConfirmSubmitBtn" type="submit" disabled>Enter Reset</button>
+        </div>
+      </form>
+    </section>
+
+    <main id="mainContent" class="main-grid">
+      <section class="panel timer-panel" aria-labelledby="timerHeading">
+        <div class="panel-head">
+          <h2 id="timerHeading">Session Timer</h2>
+          <p>Set your remaining hours, then start, pause, or reset with one tap.</p>
+        </div>
+        <div id="timer" role="timer" aria-live="polite" aria-atomic="true">0999:00:00</div>
+        <p id="statusText" class="status-pill" role="status" aria-live="polite">Paused</p>
+        <div class="controls" role="group" aria-label="Timer controls">
+          <button id="startBtn" type="button"><span class="btn-label">Start</span><span class="shortcut-hint" data-shortcut-for="toggle"></span></button>
+          <button id="pauseBtn" type="button"><span class="btn-label">Pause</span><span class="shortcut-hint" data-shortcut-for="toggle"></span></button>
+          <button id="resetBtn" type="button"><span class="btn-label">Reset</span><span class="shortcut-hint" data-shortcut-for="reset"></span></button>
+          <button id="setHoursBtn" type="button"><span class="btn-label">Set Hours</span><span class="shortcut-hint" data-shortcut-for="setHours"></span></button>
+        </div>
+        <div class="timer-tag-row">
+          <label for="timerTagSelect">Active Tag</label>
+          <select id="timerTagSelect" aria-label="Select active tag for timer sessions"></select>
+        </div>
+
+        <section class="preset-section" aria-labelledby="presetHeading">
+          <div class="preset-headline">
+            <h3 id="presetHeading">Session Presets</h3>
+            <p id="presetCount" class="preset-count">0/6 custom</p>
+          </div>
+          <div id="presetButtons" class="preset-buttons" role="group" aria-label="Session preset options"></div>
+          <form id="presetForm" class="preset-form">
+            <label class="sr-only" for="presetLabel">Preset label</label>
+            <input id="presetLabel" name="presetLabel" type="text" maxlength="18" placeholder="Preset label (optional)">
+            <label class="sr-only" for="presetMinutes">Preset minutes</label>
+            <input id="presetMinutes" name="presetMinutes" type="number" min="1" max="115800" step="1" placeholder="Minutes" required inputmode="numeric">
+            <button id="savePresetBtn" type="submit">Save Preset</button>
+          </form>
+          <p id="presetFeedback" class="preset-feedback" role="status" aria-live="polite"></p>
+        </section>
+      </section>
+
+      <section class="panel analytics-panel" aria-labelledby="analyticsHeading">
+        <div class="panel-head">
+          <h2 id="analyticsHeading">Daily Usage</h2>
+          <p>Track total time and number of sessions completed per day.</p>
+        </div>
+        <div class="analytics-toolbar">
+          <input id="analyticsFilterInput" type="search" placeholder="Filter by date (YYYY-MM-DD or month)" aria-label="Filter analytics by date">
+          <button id="clearAnalyticsFilterBtn" type="button">Clear</button>
+        </div>
+        <p id="analyticsActionFeedback" class="analytics-feedback" role="status" aria-live="polite"></p>
+        <div id="analytics" aria-live="polite"></div>
+        <button id="loadMoreAnalyticsBtn" type="button" class="load-more-btn" hidden>Load Older</button>
+        <div class="chart-container">
+          <canvas id="usageChart" role="img" aria-label="Bar chart of daily usage in hours"></canvas>
+        </div>
+      </section>
+
+      <section class="panel tag-reports-panel" aria-labelledby="tagReportsHeading">
+        <section class="tag-reports">
+          <div class="tag-reports-head">
+            <h3 id="tagReportsHeading">Tag Reports</h3>
+            <select id="tagReportRange" aria-label="Tag report range">
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="all">All time</option>
+            </select>
+          </div>
+          <p id="tagReportSummary" class="tag-report-summary">No tagged sessions yet.</p>
+          <div id="tagReportList" class="tag-report-list" aria-live="polite"></div>
+          <div class="chart-container tag-chart-container">
+            <canvas id="tagUsageChart" role="img" aria-label="Bar chart of time used by tag"></canvas>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel heatmap-panel" aria-labelledby="heatmapHeading">
+        <div class="panel-head">
+          <h2 id="heatmapHeading">Consistency Heatmap</h2>
+        </div>
+        <div class="heatmap-head">
+          <div class="heatmap-range-controls" role="group" aria-label="Heatmap range">
+            <button type="button" class="heatmap-range-btn" data-heatmap-range="3m">3M</button>
+            <button type="button" class="heatmap-range-btn" data-heatmap-range="6m">6M</button>
+            <button type="button" class="heatmap-range-btn is-active" data-heatmap-range="1y">1Y</button>
+          </div>
+          <p id="heatmapSummary" class="heatmap-summary">No usage yet.</p>
+        </div>
+        <div id="heatmapGridWrap" class="heatmap-grid-wrap">
+          <div id="heatmapGrid" class="heatmap-grid" role="grid" aria-label="Daily consistency heatmap"></div>
+        </div>
+        <div class="heatmap-legend" aria-hidden="true">
+          <span>Less</span>
+          <span class="heatmap-legend-cell level-0"></span>
+          <span class="heatmap-legend-cell level-1"></span>
+          <span class="heatmap-legend-cell level-2"></span>
+          <span class="heatmap-legend-cell level-3"></span>
+          <span class="heatmap-legend-cell level-4"></span>
+          <span>More</span>
+        </div>
+      </section>
+
+      <section class="panel todo-panel" aria-labelledby="todoHeading">
+        <div class="panel-head">
+          <div class="todo-heading-row">
+            <h2 id="todoHeading">To-Do List</h2>
+            <div class="todo-head-controls">
+              <label class="sr-only" for="todoFilterTag">Filter by tag</label>
+              <button id="todoModeToggleBtn" type="button">Disposable Mode</button>
+              <select id="todoFilterTag" class="todo-filter-select" aria-label="Filter to-do list by tag"></select>
+            </div>
+          </div>
+          <p>Add tasks, check them off, and remove completed clutter.</p>
+        </div>
+        <form id="todoForm" class="todo-form">
+          <label class="sr-only" for="todoInput">Add a task</label>
+          <input id="todoInput" name="todoInput" type="text" maxlength="160" placeholder="Add a task..." autocomplete="off" required>
+          <label class="sr-only" for="todoTagSelect">Task tag</label>
+          <select id="todoTagSelect" name="todoTagSelect" aria-label="Select tag for new task"></select>
+          <button id="todoAddBtn" type="submit">Add Item</button>
+        </form>
+        <div id="todoDisposableActions" class="todo-disposable-actions" hidden>
+          <button id="todoDeleteAllBtn" type="button">Delete Entire List</button>
+          <button id="todoTimeLeftBtn" type="button" class="todo-time-left-btn" aria-live="polite">24h 00m left</button>
+        </div>
+        <p id="todoMeta" class="todo-meta">0 tasks</p>
+        <p id="todoFeedback" class="todo-feedback" role="status" aria-live="polite"></p>
+        <ul id="todoList" class="todo-list" aria-live="polite"></ul>
+      </section>
+
+      <section class="panel notes-panel" aria-labelledby="notesHeading">
+        <div class="panel-head">
+          <h2 id="notesHeading">Notes Panel</h2>
+          <p>Capture quick thoughts, format them, and review your recent notes.</p>
+        </div>
+        <div class="notes-grid">
+          <article class="notes-editor-pane">
+            <div
+              id="noteEditor"
+              class="note-editor"
+              contenteditable="true"
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Note editor"
+              data-placeholder="Write a note..."
+            ></div>
+            <div class="notes-toolbar" role="group" aria-label="Note tools">
+              <button type="button" class="notes-tool-btn" data-note-tool="bold" aria-label="Bold">B</button>
+              <button type="button" class="notes-tool-btn" data-note-tool="italic" aria-label="Italic">I</button>
+              <button type="button" class="notes-tool-btn" data-note-tool="underline" aria-label="Underline">U</button>
+              <button type="button" class="notes-tool-btn" data-note-tool="strikeThrough" aria-label="Strikethrough">S</button>
+              <button type="button" class="notes-tool-btn" data-note-tool="cut" aria-label="Cut">Cut</button>
+              <button type="button" class="notes-tool-btn" data-note-tool="copy" aria-label="Copy">Copy</button>
+              <button type="button" class="notes-tool-btn" data-note-tool="paste" aria-label="Paste">Paste</button>
+            </div>
+            <div class="notes-editor-actions">
+              <button id="saveNoteBtn" type="button">Save Note</button>
+              <button id="discardNoteBtn" type="button">Discard</button>
+            </div>
+            <p id="notesFeedback" class="notes-feedback" role="status" aria-live="polite"></p>
+          </article>
+
+          <article id="notesRecentPane" class="notes-recent-pane" role="button" tabindex="0" aria-label="Open all stored notes">
+            <div class="notes-recent-head">
+              <h3>Recent Notes</h3>
+              <div class="notes-layout-controls" role="group" aria-label="Recent notes count">
+                <button type="button" class="notes-layout-btn" data-note-count="2">2</button>
+                <button type="button" class="notes-layout-btn is-active" data-note-count="4">4</button>
+                <button type="button" class="notes-layout-btn" data-note-count="6">6</button>
+              </div>
+            </div>
+            <p id="notesRecentMeta" class="notes-recent-meta">Showing 0 recent notes</p>
+            <ul id="notesRecentList" class="notes-recent-list" aria-live="polite"></ul>
+            <p class="notes-open-hint">Click this pane to open all notes</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <div id="notesLibraryBackdrop" class="notes-library-backdrop" hidden></div>
+    <section id="notesLibraryModal" class="notes-library-modal" hidden aria-labelledby="notesLibraryHeading" aria-modal="true" role="dialog">
+      <div class="notes-library-head">
+        <h2 id="notesLibraryHeading">All Notes</h2>
+        <button id="notesLibraryCloseBtn" type="button">Close</button>
+      </div>
+      <p id="notesLibraryMeta" class="notes-library-meta">0 notes saved</p>
+      <ul id="notesLibraryList" class="notes-library-list" aria-live="polite"></ul>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
